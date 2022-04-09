@@ -3,11 +3,10 @@ import pathlib
 import numpy as np
 import re
 import imutils
-import json
 from configparser import ConfigParser
 
 
-class OverlayImages:
+class MatchMaker:
     config_path = pathlib.Path('config.ini')
     config = ConfigParser()
 
@@ -21,12 +20,32 @@ class OverlayImages:
 
     def __init__(self, ir_images):
         self.config.read('config.ini')
-        self.sync_config()
+        self._sync_config()
 
         self.ir_images = {}
-        self.scan_thermal_images(ir_images)
+        self._scan_thermal_images(ir_images)
 
-    def scan_thermal_images(self, path):
+    def match(self, rgb_image: pathlib.Path, save_path=None, set_match=True):
+        ir_img = self._find_match(rgb_image)
+        if not ir_img:
+            return
+
+        rgb = cv2.imread(str(rgb_image), 1)
+        ir = cv2.imread(ir_img, 0)
+
+        if set_match:
+            img = self._overlay_images(rgb, ir, viz=True)
+            while not self._adjust_control(img):
+                img = self._overlay_images(rgb, ir, viz=True)
+
+        if not save_path:
+            return
+
+        new_img = self._overlay_images(rgb, ir, viz=False)
+        new_file = save_path / rgb_image.name
+        cv2.imwrite(str(new_file), new_img)
+
+    def _scan_thermal_images(self, path):
         path = pathlib.Path(path)
         for p in path.glob('*.png'):
             res = self.reg_temp.match(p.stem)
@@ -37,7 +56,7 @@ class OverlayImages:
 
             print(p, " > ", cap_time)
 
-    def find_match(self, rgb_image):
+    def _find_match(self, rgb_image):
         res = self.reg_temp.match(rgb_image.stem)
         if not res:
             return
@@ -51,29 +70,9 @@ class OverlayImages:
         print(rgb_image, " < MATCHED >", ir_img)
         return ir_img
 
-    def match(self, rgb_image: pathlib.Path, save_path=None, set_match=True):
-        ir_img = self.find_match(rgb_image)
-        if not ir_img:
-            return
-
-        rgb = cv2.imread(str(rgb_image), 1)
-        ir = cv2.imread(ir_img, 0)
-
-        if set_match:
-            img = self.overlay_images(rgb, ir, viz=True)
-            while not self.adjust_control(img):
-                img = self.overlay_images(rgb, ir, viz=True)
-
-        if not save_path:
-            return
-
-        new_img = self.overlay_images(rgb, ir, viz=False)
-        new_file = save_path / rgb_image.name
-        cv2.imwrite(str(new_file), new_img)
-
-    def overlay_images(self, rgb, thermal, viz=False):
+    def _overlay_images(self, rgb, thermal, viz=False):
         if viz:
-            thermal = self.as_heatmap(thermal)
+            thermal = self._as_heatmap(thermal)
             rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
             rgb = np.stack([rgb, rgb, rgb], axis=2)
         else:
@@ -98,13 +97,13 @@ class OverlayImages:
         return overlay
 
     @classmethod
-    def adjust_control(cls, img):
+    def _adjust_control(cls, img):
         cv2.imshow('Preview', img)
         cv2.resizeWindow("Preview", np.array(img.shape[:2]) // 2)
         k = cv2.waitKey(0)
 
         if k == ord('t'):
-            cls.sync_config()
+            cls._sync_config()
             return True
         if k == ord('r'):
             return True
@@ -129,7 +128,7 @@ class OverlayImages:
         return False
 
     @classmethod
-    def sync_config(cls):
+    def _sync_config(cls):
         transforms = cls.config['transforms']
 
         if cls.x_offset:
@@ -156,6 +155,6 @@ class OverlayImages:
             cls.config.write(configfile)
 
     @staticmethod
-    def as_heatmap(img):
+    def _as_heatmap(img):
         # Color-maps https://docs.opencv.org/4.x/d3/d50/group__imgproc__colormap.html#ga9a805d8262bcbe273f16be9ea2055a65
         return cv2.applyColorMap(cv2.equalizeHist(img), cv2.COLORMAP_PLASMA)
