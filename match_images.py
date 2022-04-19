@@ -70,11 +70,9 @@ class MatchMaker:
         print(rgb_image, " < MATCHED >", ir_img)
         return ir_img
 
-    def _overlay_images(self, rgb, thermal, viz=False):
-        if viz:
+    def _overlay_images(self, rgb, thermal, viz=False, heatmap=True):
+        if heatmap:
             thermal = self._as_heatmap(thermal)
-            rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
-            rgb = np.stack([rgb, rgb, rgb], axis=2)
         else:
             thermal = cv2.cvtColor(thermal, cv2.COLOR_GRAY2BGR)
             thermal[:, :, :2] = 0
@@ -87,14 +85,16 @@ class MatchMaker:
         yof = self.y_offset + border_t
 
         overlay = cv2.copyMakeBorder(np.zeros_like(rgb), border_t, border_t, border_t, border_t, cv2.BORDER_CONSTANT)
-        overlay[:, :, 1] = 255
+        # overlay[:, :, 1] = 255
 
         overlay[yof:yof + rt.shape[0], xof:xof + rt.shape[1], :] = rt
 
         if viz:
+            rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
+            rgb = np.stack([rgb, rgb, rgb], axis=2)
             overlay = cv2.addWeighted(overlay[border_t:-border_t, border_t:-border_t], .5, rgb, 1, 0.0)
 
-        return overlay
+        return overlay[border_t:-border_t, border_t:-border_t, :]
 
     @classmethod
     def _adjust_control(cls, img):
